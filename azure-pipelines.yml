@@ -16,6 +16,7 @@ variables:
   CONTAINERAPPS_APP: album-backend-api
   CONTAINERAPPS_ENVIRONMENT: aca-environment
   RESOURCE_GROUP: rg-containerapps-azure-pipelines
+  LOCATION: westeurope # ¡Nueva variable! Asumimos la región de contexto anterior.
   TAG: '$(Build.BuildId)'
 
 stages:
@@ -47,11 +48,63 @@ stages:
 - stage: Deploy
   displayName: Deploy to Container Apps
   jobs:
-    - job: Deploy
-      displayName: Deploy
+    - job: ProvisionInfrastructure # 1. NUEVO JOB: PROVISIONA EL ENTORNO
+      displayName: Provision ACA Environment
       pool:
         vmImage: ubuntu-latest
-      
+      steps:
+        - task: AzureCLI@2
+          displayName: 'Create Log Analytics & ACA Environment'
+          inputs:
+            # Debe ser tu Service Connection de tipo Azure Resource Manager
+            azureSubscription: 'azure-connection' 
+            scriptType: 'bash'
+            scriptLocation: 'inlineScript'
+            inlineScript: |
+              # Definición de variables para el script
+              LOG_ANALYTICS_WORKSPACE="logs-$(RESOURCE_GROUP)" 
+              LOCATION="$(LOCATION)"
+              RESOURCE_GROUP="$(RESOURCE_GROUP)"
+              CONTAINERAPPS_ENVIRONMENT="$(CONTAINERAPPS_ENVIRONMENT)"
+
+              echo "--- 1. Registrando Proveedor de Operational Insights ---"
+              az provider register -n Microsoft.OperationalInsights --wait
+
+              echo "--- 2. Creando o verificando Resource Group ---"
+              az group create \
+                --name $RESOURCE_GROUP \
+                --location $LOCATION \
+                --output none
+
+              echo "--- 3. Creando Log Analytics Workspace ---"
+              # Creamos el Workspace manualmente para evitar el error de creación automática
+              az monitor log-analytics workspace create \
+                --resource-group $RESOURCE_GROUP \
+                --workspace-name $LOG_ANALYTICS_WORKSPACE \
+                --location $LOCATION \
+                --output none
+
+              echo "--- 4. Obteniendo la clave del Workspace ---"
+              LOG_ANALYTICS_KEY=$(az monitor log-analytics get-shared-keys \
+                --resource-group $RESOURCE_GROUP \
+                --workspace-name $LOG_ANALYTICS_WORKSPACE \
+                --query primarySharedKey --output tsv)
+
+              echo "--- 5. Creando el Entorno de Container App ---"
+              # Usamos el Workspace y la clave para crear el entorno
+              az containerapp env create \
+                --name $CONTAINERAPPS_ENVIRONMENT \
+                --resource-group $RESOURCE_GROUP \
+                --location $LOCATION \
+                --logs-workspace $LOG_ANALYTICS_WORKSPACE \
+                --logs-workspace-key $LOG_ANALYTICS_KEY \
+                --output none
+    
+    - job: DeployApp # 2. JOB DE DESPLIEGUE (RENOMBRADO)
+      displayName: Deploy
+      dependsOn: ProvisionInfrastructure # Asegura que la infraestructura se cree primero
+      pool:
+        vmImage: ubuntu-latest
       steps:
         - task: AzureContainerApps@1
           displayName: Deploy new container version
@@ -63,4 +116,3 @@ stages:
             containerAppEnvironment: '$(CONTAINERAPPS_ENVIRONMENT)'
             targetPort: '3500'
             ingress: 'external'
-            
