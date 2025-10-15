@@ -42,4 +42,4 @@ stages:
         containerRegistry: 'dockerhub-connection'
         repository: '$(IMAGE_NAME)'
         command: 'push'
-        tags: '2'
+        tags: $(TAG)
