@@ -85,7 +85,7 @@ stages:
                 --output none
 
               echo "--- 4. Obteniendo la clave del Workspace ---"
-              LOG_ANALYTICS_KEY=$(az monitor log-analytics get-shared-keys \
+              LOG_ANALYTICS_KEY=$(az monitor log-analytics workspace get-shared-keys \
                 --resource-group $RESOURCE_GROUP \
                 --workspace-name $LOG_ANALYTICS_WORKSPACE \
                 --query primarySharedKey --output tsv)
@@ -96,7 +96,7 @@ stages:
                 --name $CONTAINERAPPS_ENVIRONMENT \
                 --resource-group $RESOURCE_GROUP \
                 --location $LOCATION \
-                --logs-workspace $LOG_ANALYTICS_WORKSPACE \
+                --logs-workspace-id $LOG_ANALYTICS_ID \
                 --logs-workspace-key $LOG_ANALYTICS_KEY \
                 --output none
     
